@@ -107,9 +107,8 @@ async def start_command(message: Message):
     if is_user_already_success(user_id):
         await message.answer(
             f"🎉 С возвращением, {first_name}!\n\n"
-            f"Вы уже активировали доступ. Вот ваша ссылка:\n"
-            f"{TARGET_BOT_LINK}\n\n"
-            f"Пожалуйста, не пытайтесь пройти проверку заново — это не требуется."
+            f"Вы уже активировали доступ. Вот ваша ссылка:\n{TARGET_BOT_LINK}\n\n"
+            f"Пожалуйста, не пытайтесь пройти проверку заново."
         )
         return
 
@@ -127,6 +126,7 @@ async def start_command(message: Message):
     add_user(user_id, username, first_name, step=1)
 
     first_channel = selected_channels[0]
+    # ВНИМАНИЕ: ссылки TARGET_BOT_LINK здесь НЕТ
     await message.answer(
         f"👋 Привет, {first_name}!\n\n"
         f"🔐 Для получения доступа нужно подписаться на {REQUIRED_COUNT} канала.\n\n"
@@ -175,9 +175,10 @@ async def handle_subscription_check(callback: CallbackQuery):
         await callback.answer(f"Шаг {step} пройден! Переходим к следующему.")
     else:
         update_user_success(user_id)
+        # ТОЛЬКО ТЕПЕРЬ выдаём ссылку
         await callback.message.edit_text(
             f"🎉 Поздравляю, {first_name}!\n\n"
-            f"Вы подписались на все {REQUIRED_COUNT} каналов.\n\n"
+            f"Вы подписались на все {REQUIRED_COUNT} канала.\n\n"
             f"🔗 Ваша ссылка на бота:\n{TARGET_BOT_LINK}\n\n"
             f"Теперь можете пользоваться."
         )
