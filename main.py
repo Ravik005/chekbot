@@ -19,7 +19,7 @@ if not BOT_TOKEN:
 
 TARGET_BOT_LINK = os.getenv("TARGET_BOT_LINK", "https://t.me/hacks11_bot")
 FIRST_CHANNEL = os.getenv("FIRST_CHANNEL", "@VyruchaiCardBotChannel")
-OTHER_CHANNELS = os.getenv("OTHER_CHANNELS", "@naruto_boruto_seriess,@XochuKuplu,@madeinvostok,@cattayson,@WBRANSOMS").split(",")
+OTHER_CHANNELS = os.getenv("OTHER_CHANNELS", "@naruto_boruto_seriess,@XochuKuplu,@madeinvostok,@cattayson").split(",")
 REQUIRED_COUNT = int(os.getenv("REQUIRED_COUNT", "3"))
 DB_PATH = "users.db"
 # =================================
