@@ -104,7 +104,6 @@ async def start_command(message: Message):
     username = message.from_user.username or ""
     first_name = message.from_user.first_name or ""
 
-    # Если пользователь уже получал доступ — сразу даём ссылку без подписок
     if is_user_already_success(user_id):
         await message.answer(
             f"🎉 С возвращением, {first_name}!\n\n"
@@ -130,8 +129,7 @@ async def start_command(message: Message):
     first_channel = selected_channels[0]
     await message.answer(
         f"👋 Привет, {first_name}!\n\n"
-        f"🔐 Добро пожаловать! Для получения доступа к боту {TARGET_BOT_LINK}\n"
-        f"необходимо подписаться на {REQUIRED_COUNT} каналов.\n\n"
+        f"🔐 Для получения доступа нужно подписаться на {REQUIRED_COUNT} канала.\n\n"
         f"**Шаг 1 из {REQUIRED_COUNT}**\n"
         f"Пожалуйста, подпишись на этот канал и нажми кнопку «Я подписался!»:",
         reply_markup=channel_keyboard(first_channel, step_num=1, total=REQUIRED_COUNT)
@@ -142,18 +140,14 @@ async def handle_subscription_check(callback: CallbackQuery):
     user_id = callback.from_user.id
     first_name = callback.from_user.first_name or "Пользователь"
 
-    # Если пользователь уже успешен — не даём проходить заново
     if is_user_already_success(user_id):
-        await callback.message.edit_text(
-            f"✅ Вы уже получили доступ. Ваша ссылка: {TARGET_BOT_LINK}\n\n"
-            f"Пожалуйста, не пытайтесь пройти проверку снова."
-        )
-        await callback.answer("Доступ уже был открыт")
+        await callback.message.edit_text(f"✅ Вы уже получили доступ. Ваша ссылка: {TARGET_BOT_LINK}")
+        await callback.answer()
         return
 
     state = user_state.get(user_id)
     if not state:
-        await callback.message.edit_text("❌ Ошибка сессии. Пожалуйста, перезапустите бота командой /start")
+        await callback.message.edit_text("❌ Ошибка. Напиши /start заново.")
         await callback.answer()
         return
 
@@ -161,37 +155,31 @@ async def handle_subscription_check(callback: CallbackQuery):
     channels = state["channels"]
     current_channel = channels[step - 1]
 
-    # Проверяем подписку
     if not await is_subscribed(user_id, current_channel):
         await callback.answer(
-            f"❌ {first_name}, вы ещё не подписались на канал {current_channel}.\n"
-            "Подпишитесь и нажмите кнопку снова.",
+            f"❌ {first_name}, вы не подписались на канал {current_channel}. Подпишитесь и нажмите снова.",
             show_alert=True
         )
         return
 
-    # Подписка подтверждена
     if step < REQUIRED_COUNT:
-        # Переход к следующему шагу
         state["step"] = step + 1
         update_user_step(user_id, step + 1)
         next_channel = channels[step]
         await callback.message.edit_text(
-            f"✅ Отлично, {first_name}! Шаг {step} пройден.\n\n"
+            f"✅ Шаг {step} пройден!\n\n"
             f"🔐 Шаг {step + 1} из {REQUIRED_COUNT}\n"
             f"Теперь подпишись на этот канал:",
             reply_markup=channel_keyboard(next_channel, step_num=step + 1, total=REQUIRED_COUNT)
         )
         await callback.answer(f"Шаг {step} пройден! Переходим к следующему.")
     else:
-        # Все шаги выполнены – выдаём ссылку и записываем в БД успех
         update_user_success(user_id)
         await callback.message.edit_text(
             f"🎉 Поздравляю, {first_name}!\n\n"
-            f"Вы успешно подписались на все {REQUIRED_COUNT} каналов.\n\n"
-            f"🔗 Ваша ссылка на основного бота:\n{TARGET_BOT_LINK}\n\n"
-            f"Теперь вы можете пользоваться ботом.\n\n"
-            f"⚠️ Повторная проверка не потребуется, команда /start будет сразу выдавать ссылку."
+            f"Вы подписались на все {REQUIRED_COUNT} каналов.\n\n"
+            f"🔗 Ваша ссылка на бота:\n{TARGET_BOT_LINK}\n\n"
+            f"Теперь можете пользоваться."
         )
         if user_id in user_state:
             del user_state[user_id]
@@ -212,8 +200,6 @@ def health_check():
 if __name__ == '__main__':
     init_db()
     logging.basicConfig(level=logging.INFO)
-    # Запускаем Flask в фоновом потоке-демоне
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    # Запускаем бота в главном потоке
     asyncio.run(dp.start_polling(bot))
