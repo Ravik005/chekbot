@@ -17,8 +17,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not set")
 
-FINAL_BOT_LINK = os.getenv("FINAL_BOT_LINK", "https://t.me/hacks11_bot")   # То, что выдаём в конце
-VYRUCHAI_BOT_LINK = os.getenv("VYRUCHAI_BOT_LINK", "https://t.me/VyruchaiCardBot")   # Бот для ручного запуска
+FINAL_BOT_LINK = os.getenv("FINAL_BOT_LINK", "https://t.me/hacks11_bot")
+VYRUCHAI_BOT_LINK = os.getenv("VYRUCHAI_BOT_LINK", "https://t.me/VyruchaiCardBot")
 
 FIRST_CHANNEL = os.getenv("FIRST_CHANNEL")
 if not FIRST_CHANNEL:
@@ -27,7 +27,8 @@ OTHER_CHANNELS_STR = os.getenv("OTHER_CHANNELS")
 if not OTHER_CHANNELS_STR:
     raise ValueError("OTHER_CHANNELS not set")
 OTHER_CHANNELS = [ch.strip() for ch in OTHER_CHANNELS_STR.split(",") if ch.strip()]
-REQUIRED_COUNT = 4   # теперь 4 шага (3 подписки + ручное подтверждение)
+
+REQUIRED_COUNT = 3   # три шага: 1 - ручной запуск, 2 - канал1, 3 - канал2
 DB_PATH = "data/users.db"
 # ========================================================
 
@@ -93,24 +94,23 @@ async def is_subscribed(user_id, channel):
         logging.error(f"Ошибка проверки {channel}: {e}")
         return False
 
-def channel_keyboard(channel, step_num, total):
+def step1_keyboard():
+    """Шаг 1: ручной запуск VyruchaiCardBot"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Перейти в @VyruchaiCardBot и нажать /start", url=VYRUCHAI_BOT_LINK)],
+        [InlineKeyboardButton(text="✅ Я запустил бота!", callback_data="step1_done")]
+    ])
+
+def channel_keyboard(channel, step_num):
     username = channel.lstrip('@')
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"📢 Подписаться на канал {step_num}", url=f"https://t.me/{username}")],
-        [InlineKeyboardButton(text="✅ Я подписался!", callback_data="check_step")]
-    ])
-
-def vyruchai_keyboard():
-    """Клавиатура для 4-го шага: переход в VyruchaiCardBot и ручное подтверждение"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Перейти в бот VyruchaiCardBot и нажать /start", url=VYRUCHAI_BOT_LINK)],
-        [InlineKeyboardButton(text="✅ Я запустил бота!", callback_data="check_step")]
+        [InlineKeyboardButton(text="✅ Я подписался!", callback_data="check_channel")]
     ])
 
 def final_keyboard():
-    """Финальная клавиатура с ссылкой на hacks11_bot"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔓 Перейти к основному боту", url=FINAL_BOT_LINK)]
+        [InlineKeyboardButton(text="🔓 Получить доступ к основному боту", url=FINAL_BOT_LINK)]
     ])
 
 @dp.message(CommandStart())
@@ -126,106 +126,93 @@ async def start_command(message: Message):
         )
         return
 
-    if len(OTHER_CHANNELS) < 2:
-        await message.answer("❌ Недостаточно каналов в OTHER_CHANNELS (нужно минимум 2).")
-        return
-
-    # Выбираем 2 случайных канала из остальных
-    random_others = random.sample(OTHER_CHANNELS, 2)
-    # Шаги: 1 - первый канал, 2 и 3 - случайные каналы, 4 - ручное подтверждение
-    selected_channels = [FIRST_CHANNEL] + random_others + ["__MANUAL__"]   # маркер ручного шага
-
+    # Инициализируем состояние: три шага
     user_state[user_id] = {
         "step": 1,
-        "channels": selected_channels
+        "channels": [None, FIRST_CHANNEL, random.choice(OTHER_CHANNELS)]  # шаг2 и шаг3
     }
     add_user(user_id, username, first_name, step=1)
 
-    first_channel = selected_channels[0]
     await message.answer(
         f"👋 Привет, {first_name}!\n\n"
-        f"🔐 Для доступа нужно выполнить 4 простых действия:\n"
-        f"1️⃣ Подписаться на канал\n"
-        f"2️⃣ Подписаться на канал\n"
-        f"3️⃣ Подписаться на канал\n"
-        f"4️⃣ Запустить бота @VyruchaiCardBot (нажать /start)\n\n"
-        f"**Шаг 1 из 4**\nПодпишись на этот канал:",
-        reply_markup=channel_keyboard(first_channel, step_num=1, total=4)
+        f"🔐 Для получения доступа к основному боту нужно:\n"
+        f"1️⃣ Запустить бота @VyruchaiCardBot (нажать /start)\n"
+        f"2️⃣ Подписаться на канал {FIRST_CHANNEL}\n"
+        f"3️⃣ Подписаться на канал (будет выбран случайно)\n\n"
+        f"**Шаг 1 из 3**\n"
+        f"Перейдите в бота и нажмите /start, затем вернитесь и нажмите кнопку ниже:",
+        reply_markup=step1_keyboard()
     )
 
-@dp.callback_query(F.data == "check_step")
-async def handle_subscription_check(callback: CallbackQuery):
+@dp.callback_query(F.data == "step1_done")
+async def step1_done(callback: CallbackQuery):
     user_id = callback.from_user.id
-    first_name = callback.from_user.first_name or ""
-
-    if is_user_already_success(user_id):
-        await callback.message.edit_text(
-            f"✅ Вы уже получили доступ.",
-            reply_markup=final_keyboard()
-        )
-        await callback.answer()
+    state = user_state.get(user_id)
+    if not state or state["step"] != 1:
+        await callback.answer("Ошибка. Напишите /start заново.", show_alert=True)
         return
 
+    # Переходим к шагу 2 (первый канал)
+    state["step"] = 2
+    update_user_step(user_id, 2)
+    first_channel = state["channels"][1]
+    await callback.message.edit_text(
+        f"✅ Отлично! Теперь **Шаг 2 из 3**\n"
+        f"Подпишись на этот канал:",
+        reply_markup=channel_keyboard(first_channel, step_num=2)
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "check_channel")
+async def check_channel(callback: CallbackQuery):
+    user_id = callback.from_user.id
     state = user_state.get(user_id)
     if not state:
-        await callback.message.edit_text("❌ Ошибка. Напиши /start заново.")
-        await callback.answer()
+        await callback.answer("Ошибка. Напишите /start заново.", show_alert=True)
         return
 
     step = state["step"]
-    channels = state["channels"]
-    current = channels[step - 1]
+    if step == 2:
+        channel = state["channels"][1]
+        if not await is_subscribed(user_id, channel):
+            await callback.answer(
+                f"❌ Вы не подписались на канал {channel}. Подпишитесь и нажмите снова.",
+                show_alert=True
+            )
+            return
+        # Переходим к шагу 3
+        state["step"] = 3
+        update_user_step(user_id, 3)
+        second_channel = state["channels"][2]
+        await callback.message.edit_text(
+            f"✅ Шаг 2 пройден!\n\n"
+            f"**Шаг 3 из 3**\n"
+            f"Теперь подпишись на этот канал:",
+            reply_markup=channel_keyboard(second_channel, step_num=3)
+        )
+        await callback.answer("Шаг 2 пройден!")
 
-    # Если текущий шаг — ручное подтверждение (маркер __MANUAL__)
-    if current == "__MANUAL__":
+    elif step == 3:
+        channel = state["channels"][2]
+        if not await is_subscribed(user_id, channel):
+            await callback.answer(
+                f"❌ Вы не подписались на канал {channel}. Подпишитесь и нажмите снова.",
+                show_alert=True
+            )
+            return
+        # Все шаги выполнены
         update_user_success(user_id)
         await callback.message.edit_text(
-            f"🎉 Отлично, {first_name}!\n\n"
-            f"Вы выполнили все условия (подписались на 3 канала и запустили @VyruchaiCardBot).\n\n"
-            f"🔗 Нажмите кнопку ниже, чтобы перейти к основному боту:",
+            f"🎉 Поздравляю!\n\n"
+            f"Вы выполнили все условия:\n"
+            f"✅ Запустили @VyruchaiCardBot\n"
+            f"✅ Подписались на {state['channels'][1]}\n"
+            f"✅ Подписались на {state['channels'][2]}\n\n"
+            f"🔗 Ваша ссылка на основного бота:\n{FINAL_BOT_LINK}",
             reply_markup=final_keyboard()
         )
-        if user_id in user_state:
-            del user_state[user_id]
+        del user_state[user_id]
         await callback.answer("Доступ открыт!")
-        return
-
-    # Иначе это проверка подписки на канал
-    if not await is_subscribed(user_id, current):
-        await callback.answer(
-            f"❌ {first_name}, вы не подписались на канал {current}. Подпишитесь и нажмите снова.",
-            show_alert=True
-        )
-        return
-
-    # Подписка подтверждена
-    if step < len(channels):
-        next_step = step + 1
-        state["step"] = next_step
-        update_user_step(user_id, next_step)
-        next_item = channels[next_step - 1]
-
-        if next_item == "__MANUAL__":
-            # Переходим к ручному шагу
-            await callback.message.edit_text(
-                f"✅ Шаг {step} пройден!\n\n"
-                f"🔐 **Шаг 4 из 4**\n"
-                f"Теперь перейдите в бота @VyruchaiCardBot и нажмите /start, потом вернитесь и нажмите кнопку ниже.",
-                reply_markup=vyruchai_keyboard()
-            )
-        else:
-            await callback.message.edit_text(
-                f"✅ Шаг {step} пройден!\n\n"
-                f"🔐 Шаг {next_step} из {len(channels)}\n"
-                f"Теперь подпишись на этот канал:",
-                reply_markup=channel_keyboard(next_item, step_num=next_step, total=len(channels))
-            )
-        await callback.answer(f"Шаг {step} пройден!")
-    else:
-        # На всякий случай, если шагов больше нет (но у нас всегда есть ручной)
-        update_user_success(user_id)
-        await callback.message.edit_text(f"🎉 Доступ открыт! {FINAL_BOT_LINK}", reply_markup=final_keyboard())
-        await callback.answer()
 
 def run_flask():
     port = int(os.environ.get('PORT', 5000))
